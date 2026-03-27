@@ -1,109 +1,163 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 バベルの塔シミュレーション (Tower of Babel Simulation)
 聖書の創世記11章に基づく高品質なシミュレーション
+Windows / Mac / Linux どこでも動作するよう UTF-8 エンコード対応済み
 """
 
 import random
 import time
 import sys
+import os
 import textwrap
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 from enum import Enum
 
 
-# ANSI カラーコード
+# ─────────────────────── エンコード設定（最初に実行） ───────────────────────
+
+def _setup_encoding() -> None:
+    """Windows 等で UTF-8 出力を強制し、エンコードエラーで落ちないようにする。"""
+    if sys.platform == "win32":
+        try:
+            os.system("chcp 65001 > nul 2>&1")
+        except Exception:
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+            except Exception:
+                pass
+
+
+_setup_encoding()
+
+# ─────────────────────── ANSI カラー（非対応端末は無効化） ───────────────────
+
+def _ansi_supported() -> bool:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            k.SetConsoleMode(k.GetStdHandle(-11), 7)
+            return True
+        except Exception:
+            return False
+    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+_USE_COLOR = _ansi_supported()
+
+
 class Color:
-    RED = '\033[91m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    MAGENTA = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
+    RED     = '\033[91m' if _USE_COLOR else ''
+    GREEN   = '\033[92m' if _USE_COLOR else ''
+    YELLOW  = '\033[93m' if _USE_COLOR else ''
+    BLUE    = '\033[94m' if _USE_COLOR else ''
+    MAGENTA = '\033[95m' if _USE_COLOR else ''
+    CYAN    = '\033[96m' if _USE_COLOR else ''
+    WHITE   = '\033[97m' if _USE_COLOR else ''
+    BOLD    = '\033[1m'  if _USE_COLOR else ''
+    RESET   = '\033[0m'  if _USE_COLOR else ''
 
 
-# 言語定義（古代近東の実際の言語に基づく）
+# ─────────────────────── 安全な print ───────────────────────────────────────
+
+_STDOUT_ENC: str = getattr(sys.stdout, "encoding", None) or "utf-8"
+
+
+def _p(*args: object, sep: str = " ", end: str = "\n") -> None:
+    """エンコード不可な文字を '?' に置換して出力クラッシュを防ぐ。"""
+    text = sep.join(str(a) for a in args)
+    safe = text.encode(_STDOUT_ENC, errors="replace").decode(_STDOUT_ENC)
+    sys.stdout.write(safe + end)
+    sys.stdout.flush()
+
+
+# ─────────────────────── 言語定義 ────────────────────────────────────────────
+
 LANGUAGES: Dict[str, Dict[str, str]] = {
     "原始語": {
-        "hello":   "šalōm",
-        "brick":   "libittu",
-        "mortar":  "ḥēmār",
-        "build":   "banû",
-        "higher":  "elû",
-        "together":"yaḥad",
-        "name":    "šumu",
-        "heaven":  "šamāyim",
-        "work":    "milāku",
-        "stop":    "šabātu",
+        "hello":    "šalōm",
+        "brick":    "libittu",
+        "mortar":   "ḥēmār",
+        "build":    "banû",
+        "higher":   "elû",
+        "together": "yaḥad",
+        "name":     "šumu",
+        "heaven":   "šamāyim",
+        "work":     "milāku",
+        "stop":     "šabātu",
     },
     "シュメール語": {
-        "hello":   "silim",
-        "brick":   "sig4",
-        "mortar":  "im",
-        "build":   "du",
-        "higher":  "an-ta",
-        "together":"da",
-        "name":    "mu",
-        "heaven":  "an",
-        "work":    "ak",
-        "stop":    "gam",
+        "hello":    "silim",
+        "brick":    "sig4",
+        "mortar":   "im",
+        "build":    "du",
+        "higher":   "an-ta",
+        "together": "da",
+        "name":     "mu",
+        "heaven":   "an",
+        "work":     "ak",
+        "stop":     "gam",
     },
     "アッカド語": {
-        "hello":   "sulmu",
-        "brick":   "libittu",
-        "mortar":  "ṭiṭṭu",
-        "build":   "banû",
-        "higher":  "elû",
-        "together":"itti",
-        "name":    "šumu",
-        "heaven":  "šamû",
-        "work":    "epēšu",
-        "stop":    "kabātu",
+        "hello":    "sulmu",
+        "brick":    "libittu",
+        "mortar":   "tittu",
+        "build":    "banu",
+        "higher":   "elu",
+        "together": "itti",
+        "name":     "shumu",
+        "heaven":   "shamu",
+        "work":     "epeshu",
+        "stop":     "kabatu",
     },
     "エラム語": {
-        "hello":   "peš",
-        "brick":   "kuk",
-        "mortar":  "pi",
-        "build":   "ak",
-        "higher":  "hal",
-        "together":"pal",
-        "name":    "še",
-        "heaven":  "in",
-        "work":    "na",
-        "stop":    "mar",
+        "hello":    "pesh",
+        "brick":    "kuk",
+        "mortar":   "pi",
+        "build":    "ak",
+        "higher":   "hal",
+        "together": "pal",
+        "name":     "she",
+        "heaven":   "in",
+        "work":     "na",
+        "stop":     "mar",
     },
     "古ヘブライ語": {
-        "hello":   "shalom",
-        "brick":   "levena",
-        "mortar":  "chemar",
-        "build":   "banah",
-        "higher":  "alah",
-        "together":"yachad",
-        "name":    "shem",
-        "heaven":  "shamayim",
-        "work":    "melachah",
-        "stop":    "chadal",
+        "hello":    "shalom",
+        "brick":    "levena",
+        "mortar":   "chemar",
+        "build":    "banah",
+        "higher":   "alah",
+        "together": "yachad",
+        "name":     "shem",
+        "heaven":   "shamayim",
+        "work":     "melachah",
+        "stop":     "chadal",
     },
     "フリ語": {
-        "hello":   "eia",
-        "brick":   "attu",
-        "mortar":  "uri",
-        "build":   "ašti",
-        "higher":  "ardi",
-        "together":"mani",
-        "name":    "šena",
-        "heaven":  "šimigi",
-        "work":    "unuv",
-        "stop":    "kelu",
+        "hello":    "eia",
+        "brick":    "attu",
+        "mortar":   "uri",
+        "build":    "ashti",
+        "higher":   "ardi",
+        "together": "mani",
+        "name":     "shena",
+        "heaven":   "shimigi",
+        "work":     "unuv",
+        "stop":     "kelu",
     },
 }
 
 ORIGINAL_LANG = "原始語"
 
+
+# ─────────────────────── データクラス ────────────────────────────────────────
 
 class WorkerState(Enum):
     WORKING = "作業中"
@@ -116,13 +170,15 @@ class WorkerState(Enum):
 class Worker:
     name: str
     language: str
-    skill: float  # 0.0 – 1.0
+    skill: float        # 0.0 – 1.0
     state: WorkerState = WorkerState.WORKING
     bricks_laid: int = 0
 
     def speak(self, word: str) -> str:
         spoken = LANGUAGES.get(self.language, {}).get(word, word)
-        return f"{self.name}[{self.language}]: '{spoken}'"
+        enc = getattr(sys.stdout, "encoding", "utf-8") or "utf-8"
+        spoken_safe = spoken.encode(enc, errors="replace").decode(enc)
+        return f"{self.name}[{self.language}]: '{spoken_safe}'"
 
     def can_communicate(self, other: "Worker") -> bool:
         return self.language == other.language
@@ -153,6 +209,8 @@ class TowerLevel:
         return False
 
 
+# ─────────────────────── メインクラス ────────────────────────────────────────
+
 class TowerOfBabel:
     def __init__(self, num_workers: int = 20, total_levels: int = 7):
         self.num_workers = num_workers
@@ -167,11 +225,11 @@ class TowerOfBabel:
         self._initialize_tower()
         self._initialize_workers()
 
-    # ────────────────────────── 初期化 ──────────────────────────
+    # ── 初期化 ────────────────────────────────────────────────────────────────
 
     def _initialize_tower(self) -> None:
         for i in range(self.total_levels):
-            width = self.total_levels - i + 2          # 下層ほど広い
+            width = self.total_levels - i + 2      # 下層ほど広い
             bricks = width * width
             self.levels.append(TowerLevel(
                 level=i + 1,
@@ -196,25 +254,25 @@ class TowerOfBabel:
                 skill=random.uniform(0.6, 1.0),
             ))
 
-    # ────────────────────────── 表示 ──────────────────────────
+    # ── 表示 ──────────────────────────────────────────────────────────────────
 
     def _display_tower(self) -> None:
-        print(f"\n{Color.YELLOW}{'='*62}{Color.RESET}")
-        print(f"{Color.BOLD}{Color.YELLOW}  バベルの塔  ─  第{self.turn}ターン{Color.RESET}")
-        print(f"{Color.YELLOW}{'='*62}{Color.RESET}")
+        _p(f"\n{Color.YELLOW}{'=' * 62}{Color.RESET}")
+        _p(f"{Color.BOLD}{Color.YELLOW}  バベルの塔  ─  第{self.turn}ターン{Color.RESET}")
+        _p(f"{Color.YELLOW}{'=' * 62}{Color.RESET}")
 
-        max_w = self.total_levels + 4          # 最下層の幅に合わせた余白基準
+        max_w = self.total_levels + 4
         completed = [lv for lv in self.levels if lv.completed]
         current = (self.levels[self.current_level_idx]
                    if self.current_level_idx < len(self.levels) else None)
 
-        # 未着工の上層部 ─ 中央の柱だけ表示
+        # 未着工の上層部 ─ 中央の柱
         empty_rows = self.total_levels - len(completed) - (
             1 if (current and not current.completed) else 0
         )
         for _ in range(max(0, empty_rows)):
-            pad = (max_w) // 2
-            print(" " * (pad + 2) + "|")
+            pad = max_w // 2
+            _p(" " * (pad + 2) + "|")
 
         # 建設中の階層
         if current and not current.completed:
@@ -222,53 +280,53 @@ class TowerOfBabel:
             pad = (max_w - w) // 2
             filled = int(w * current.progress)
             bar = "#" * filled + "." * (w - filled)
-            print(f"  {' ' * pad}{Color.CYAN}[{bar}]{Color.RESET}"
-                  f"  ← 第{current.level}層 ({current.progress * 100:.0f}%)")
+            _p(f"  {' ' * pad}{Color.CYAN}[{bar}]{Color.RESET}"
+               f"  <- 第{current.level}層 ({current.progress * 100:.0f}%)")
 
-        # 完成済み階層（上から下の順に reversed で表示）
+        # 完成済み階層
         for lv in reversed(completed):
             w = lv.width
             pad = (max_w - w) // 2
-            print(f"  {' ' * pad}{Color.GREEN}[{'█' * w}]{Color.RESET}"
-                  f"  ← 第{lv.level}層 ✓")
+            _p(f"  {' ' * pad}{Color.GREEN}[{'#' * w}]{Color.RESET}"
+               f"  <- 第{lv.level}層 完成")
 
         # 基礎・地面
-        print(f"  {Color.YELLOW}{'▓' * (max_w + 2)}{Color.RESET}")
-        print(f"  {'─ 地面 ─':^{max_w + 2}}")
+        _p(f"  {Color.YELLOW}{'=' * (max_w + 2)}{Color.RESET}")
+        _p(f"  {'-- 地面 --':^{max_w + 2}}")
 
-        # 統計行
+        # 統計
         working  = sum(1 for w in self.workers if w.state == WorkerState.WORKING)
         confused = sum(1 for w in self.workers if w.state == WorkerState.CONFUSED)
         fled     = sum(1 for w in self.workers if w.state == WorkerState.FLED)
         total_b  = sum(w.bricks_laid for w in self.workers)
 
-        print(f"\n  作業中: {Color.GREEN}{working}人{Color.RESET}  "
-              f"混乱中: {Color.RED}{confused}人{Color.RESET}  "
-              f"逃亡: {Color.MAGENTA}{fled}人{Color.RESET}  "
-              f"累積レンガ: {Color.CYAN}{total_b}個{Color.RESET}")
+        _p(f"\n  作業中: {Color.GREEN}{working}人{Color.RESET}  "
+           f"混乱中: {Color.RED}{confused}人{Color.RESET}  "
+           f"逃亡: {Color.MAGENTA}{fled}人{Color.RESET}  "
+           f"累積レンガ: {Color.CYAN}{total_b}個{Color.RESET}")
 
-    # ────────────────────────── ゲームロジック ──────────────────────────
+    # ── ゲームロジック ────────────────────────────────────────────────────────
 
     def _confuse_languages(self) -> None:
         """神による言語の混乱（創世記 11:7）"""
         self.language_confused = True
         self.confusion_turn = self.turn
 
-        print(f"\n{Color.BOLD}{Color.RED}{'!' * 62}{Color.RESET}")
-        print(f"{Color.BOLD}{Color.RED}  ★ 神による言語の混乱 ★{Color.RESET}")
-        print(f"{Color.RED}  「さあ、我々は下って、彼らの言葉を乱し、")
-        print(f"   互いに相手の言葉が分からないようにしよう。」")
-        print(f"  ── 創世記 11:7{Color.RESET}")
-        print(f"{Color.BOLD}{Color.RED}{'!' * 62}{Color.RESET}\n")
+        _p(f"\n{Color.BOLD}{Color.RED}{'!' * 62}{Color.RESET}")
+        _p(f"{Color.BOLD}{Color.RED}  ★ 神による言語の混乱 ★{Color.RESET}")
+        _p(f"{Color.RED}  「さあ、我々は下って、彼らの言葉を乱し、")
+        _p(f"   互いに相手の言葉が分からないようにしよう。」")
+        _p(f"  ── 創世記 11:7{Color.RESET}")
+        _p(f"{Color.BOLD}{Color.RED}{'!' * 62}{Color.RESET}\n")
 
         lang_pool = [k for k in LANGUAGES if k != ORIGINAL_LANG]
         for worker in self.workers:
             worker.language = random.choice(lang_pool)
             worker.state = WorkerState.CONFUSED
 
-        print(f"{Color.YELLOW}【混乱の叫び声】{Color.RESET}")
+        _p(f"{Color.YELLOW}【混乱の叫び声】{Color.RESET}")
         for w in random.sample(self.workers, min(6, len(self.workers))):
-            print(f"  {w.speak('heaven')}  ← 誰も理解できない！")
+            _p(f"  {w.speak('heaven')}  <- 誰も理解できない！")
 
     def _simulate_turn(self) -> bool:
         """1ターン進める。継続なら True を返す。"""
@@ -279,79 +337,71 @@ class TowerOfBabel:
 
         current_level = self.levels[self.current_level_idx]
 
-        # ── 混乱後の状態遷移 ──
+        # 混乱後の状態遷移
         if self.language_confused:
             for worker in self.workers:
                 if worker.state == WorkerState.CONFUSED:
                     roll = random.random()
                     if roll < 0.25:
-                        # 同言語の仲間を見つけて部分回復
                         allies = [w for w in self.workers
                                   if w.language == worker.language and w != worker]
                         if allies:
                             worker.state = WorkerState.WORKING
-                            worker.skill *= 0.65    # 効率低下
+                            worker.skill *= 0.65
                     elif roll < 0.45:
                         worker.state = WorkerState.FLED
 
-        # ── 作業フェーズ ──
+        # 作業フェーズ
         active = [w for w in self.workers if w.state == WorkerState.WORKING]
 
         for worker in active:
             efficiency = worker.skill
             if self.language_confused:
-                group_size = sum(
-                    1 for w in active if w.language == worker.language
-                )
+                group_size = sum(1 for w in active if w.language == worker.language)
                 if group_size < 3:
-                    efficiency *= 0.35   # 孤立グループは大幅効率低下
+                    efficiency *= 0.35
 
             if random.random() < efficiency:
                 just_completed = current_level.place_brick()
                 worker.bricks_laid += 1
                 if just_completed:
-                    print(f"\n{Color.GREEN}  ★ 第{current_level.level}層が完成！{Color.RESET}")
+                    _p(f"\n{Color.GREEN}  ★ 第{current_level.level}層が完成！{Color.RESET}")
                     self.current_level_idx += 1
-                    break   # 次の層へ
+                    break
 
         return True
 
     def _check_confusion_trigger(self) -> bool:
-        """塔が半分を超えたら言語混乱を発動"""
         if self.language_confused:
             return False
         completed = sum(1 for lv in self.levels if lv.completed)
         return completed >= 3
 
-    # ────────────────────────── メインループ ──────────────────────────
+    # ── メインループ ──────────────────────────────────────────────────────────
 
-    def run(self, max_turns: int = 80) -> None:
-        # ─ タイトル ─
-        print(f"\n{Color.BOLD}{Color.CYAN}{'=' * 62}{Color.RESET}")
-        print(f"{Color.BOLD}{Color.CYAN}  バベルの塔  ─  文明の野望と神の摂理{Color.RESET}")
-        print(f"{Color.BOLD}{Color.CYAN}  Tower of Babel Simulation  (Genesis 11:1-9){Color.RESET}")
-        print(f"{Color.BOLD}{Color.CYAN}{'=' * 62}{Color.RESET}")
-        print(f"\n  ワーカー数: {self.num_workers}人 │ 目標層数: {self.total_levels}層\n")
+    def run(self, max_turns: int = 120) -> None:
+        _p(f"\n{Color.BOLD}{Color.CYAN}{'=' * 62}{Color.RESET}")
+        _p(f"{Color.BOLD}{Color.CYAN}  バベルの塔  ─  文明の野望と神の摂理{Color.RESET}")
+        _p(f"{Color.BOLD}{Color.CYAN}  Tower of Babel Simulation  (Genesis 11:1-9){Color.RESET}")
+        _p(f"{Color.BOLD}{Color.CYAN}{'=' * 62}{Color.RESET}")
+        _p(f"\n  ワーカー数: {self.num_workers}人  目標層数: {self.total_levels}層\n")
 
-        # ─ 物語の始まり ─
-        print(f"{Color.YELLOW}【物語の始まり】{Color.RESET}")
-        print(textwrap.fill(
+        _p(f"{Color.YELLOW}【物語の始まり】{Color.RESET}")
+        _p(textwrap.fill(
             "「全地は一つの言葉を話し、同じことばを使っていた。」"
             "人々は東の方から移動し、シンアルの地の平野を見つけてそこに住んだ。"
             "彼らは言い合った。「さあ、レンガを作って、よく焼こう。」"
             "石の代わりにレンガを用い、漆喰の代わりにアスファルトを用いた。",
             width=62, initial_indent="  ", subsequent_indent="  "
         ))
-        print(f"  ── 創世記 11:1-3\n")
+        _p(f"  ── 創世記 11:1-3\n")
 
-        # ─ 建設宣言 ─
         leader = self.workers[0]
-        print(f"{Color.CYAN}【リーダーの宣言】{Color.RESET}")
-        print(f"  {leader.speak('build')}")
-        print(f"  {leader.speak('heaven')}")
-        print(f"  {leader.speak('together')}\n")
+        _p(f"{Color.CYAN}【リーダーの宣言】{Color.RESET}")
+        _p(f"  {leader.speak('build')}")
+        _p(f"  {leader.speak('heaven')}")
+        _p(f"  {leader.speak('together')}\n")
 
-        # ─ メインループ ─
         for _ in range(max_turns):
             if self._check_confusion_trigger():
                 self._confuse_languages()
@@ -359,66 +409,63 @@ class TowerOfBabel:
             if not self._simulate_turn():
                 break
 
-            # 数ターンごとに塔を描画
             if self.turn % 6 == 0:
                 self._display_tower()
 
-            # 全員が作業不能になったら終了
             still_active = sum(
                 1 for w in self.workers
                 if w.state in (WorkerState.WORKING, WorkerState.CONFUSED)
             )
             if still_active == 0:
-                print(f"\n{Color.RED}  全ワーカーが逃散しました。建設は中断されました。{Color.RESET}")
+                _p(f"\n{Color.RED}  全ワーカーが逃散しました。建設は中断されました。{Color.RESET}")
                 break
 
-            # 全層完成
             if self.current_level_idx >= self.total_levels:
-                print(f"\n{Color.YELLOW}  ⚠ 塔が天に届こうとしています！{Color.RESET}")
+                _p(f"\n{Color.YELLOW}  塔が天に届こうとしています！{Color.RESET}")
                 break
 
-        # ─ 最終描画 ─
         self._display_tower()
         self._show_final_report()
 
     def _show_final_report(self) -> None:
-        print(f"\n{Color.BOLD}{'=' * 62}{Color.RESET}")
-        print(f"{Color.BOLD}  最終レポート{Color.RESET}")
-        print(f"{'=' * 62}")
+        _p(f"\n{Color.BOLD}{'=' * 62}{Color.RESET}")
+        _p(f"{Color.BOLD}  最終レポート{Color.RESET}")
+        _p(f"{'=' * 62}")
 
         completed = sum(1 for lv in self.levels if lv.completed)
         total_b = sum(w.bricks_laid for w in self.workers)
 
-        print(f"  完成した層数  : {completed} / {self.total_levels}")
-        print(f"  経過ターン数  : {self.turn}")
-        print(f"  総レンガ数    : {total_b:,}個")
+        _p(f"  完成した層数  : {completed} / {self.total_levels}")
+        _p(f"  経過ターン数  : {self.turn}")
+        _p(f"  総レンガ数    : {total_b:,}個")
 
         if self.language_confused and self.confusion_turn is not None:
-            print(f"\n  言語混乱発生  : 第{self.confusion_turn}ターン")
+            _p(f"\n  言語混乱発生  : 第{self.confusion_turn}ターン")
             groups: Dict[str, int] = {}
             for w in self.workers:
                 groups[w.language] = groups.get(w.language, 0) + 1
-            print(f"  分散言語グループ数: {len(groups)}")
+            _p(f"  分散言語グループ数: {len(groups)}")
             for lang, cnt in sorted(groups.items(), key=lambda x: -x[1]):
-                print(f"    {lang}: {cnt}人")
+                _p(f"    {lang}: {cnt}人")
 
-        print(f"\n  【ワーカー最終状態】")
+        _p(f"\n  【ワーカー最終状態】")
         for state in WorkerState:
             cnt = sum(1 for w in self.workers if w.state == state)
             if cnt:
-                print(f"    {state.value}: {cnt}人")
+                _p(f"    {state.value}: {cnt}人")
 
-        # 締めくくりの聖書の言葉
-        print(f"\n{Color.YELLOW}【聖書の言葉】{Color.RESET}")
-        print(textwrap.fill(
+        _p(f"\n{Color.YELLOW}【聖書の言葉】{Color.RESET}")
+        _p(textwrap.fill(
             "「こうして主は人々を、そこから全地に散らされた。"
             "彼らはその都市の建設をやめた。"
             "それゆえその地の名はバベルと呼ばれた。"
             "主がそこで全地の言語を乱し、そこから主が全地に人々を散らされたからである。」",
             width=62, initial_indent="  ", subsequent_indent="  "
         ))
-        print(f"  ── 創世記 11:8-9\n")
+        _p(f"  ── 創世記 11:8-9\n")
 
+
+# ─────────────────────── エントリーポイント ─────────────────────────────────
 
 def main() -> None:
     random.seed(42)
@@ -426,7 +473,7 @@ def main() -> None:
         sim = TowerOfBabel(num_workers=20, total_levels=7)
         sim.run(max_turns=120)
     except KeyboardInterrupt:
-        print(f"\n\n{Color.YELLOW}シミュレーションが中断されました。{Color.RESET}")
+        _p(f"\n\n{Color.YELLOW}シミュレーションが中断されました。{Color.RESET}")
 
 
 if __name__ == "__main__":
