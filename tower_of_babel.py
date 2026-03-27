@@ -468,12 +468,32 @@ class TowerOfBabel:
 # ─────────────────────── エントリーポイント ─────────────────────────────────
 
 def main() -> None:
+    # Python バージョン確認（3.7以上が必要）
+    if sys.version_info < (3, 7):
+        sys.stderr.write(
+            "エラー: Python 3.7以上が必要です。\n"
+            f"現在のバージョン: {sys.version}\n"
+        )
+        input("Enterキーで終了...")
+        sys.exit(1)
+
     random.seed(42)
     try:
         sim = TowerOfBabel(num_workers=20, total_levels=7)
         sim.run(max_turns=120)
     except KeyboardInterrupt:
         _p(f"\n\n{Color.YELLOW}シミュレーションが中断されました。{Color.RESET}")
+    except Exception as e:
+        # クラッシュ時にエラー内容を表示してウィンドウを閉じないようにする
+        import traceback
+        _p("\n" + "=" * 62)
+        _p("エラーが発生しました:")
+        _p(traceback.format_exc())
+        _p("=" * 62)
+    finally:
+        # Windows でダブルクリック実行した際にウィンドウがすぐ閉じないよう待機
+        if sys.platform == "win32":
+            input("\nEnterキーを押して終了...")
 
 
 if __name__ == "__main__":
